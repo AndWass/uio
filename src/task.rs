@@ -1,25 +1,32 @@
+//! Task implementation
+//!
+//! The task wraps a future and allows it to be started by the executor.
 
 use core::future::Future;
 use core::task::{Context, Poll};
 use core::pin::Pin;
 use crate::executor::TaskData;
+use crate::future::Value;
 
+/// Task structure, wrapping a future allowing it to be run by the executor.
 pub struct Task<V, T: Future<Output = V>> {
     future: T,
-    task_data: crate::executor::TaskData,
-    result: crate::future_value::FutureValue<V>,
+    task_data: TaskData,
+    result: Value<V>,
 }
 
 impl<V, T: Future<Output = V>> Task<V, T> {
+    /// Create a new task wrapping the specified `future`.
     pub fn new(future: T) -> Self {
         Self {
             future,
             task_data: crate::executor::TaskData::new(),
-            result: crate::future_value::FutureValue::new(),
+            result: crate::future::Value::new(),
         }
     }
 
-    pub fn join_handle(&mut self) -> &mut crate::future_value::FutureValue<V> {
+    /// Get a reference to a "join-handle" that can be awaited on.
+    pub fn join_handle(&mut self) -> &mut Value<V> {
         &mut self.result
     }
 }
