@@ -37,7 +37,7 @@ struct TaskList {
 
 impl TaskList {
     fn end_item() -> *mut dyn Task {
-        static mut END_TASK: MaybeUninit<crate::task::Task<(), EmptyFuture>> = MaybeUninit::uninit();
+        static mut END_TASK: MaybeUninit<crate::task::Task<EmptyFuture>> = MaybeUninit::uninit();
         static mut END_INIT: bool = false;
 
         unsafe {

@@ -9,13 +9,13 @@ use crate::executor::TaskData;
 use crate::future::Value;
 
 /// Task structure, wrapping a future allowing it to be run by the executor.
-pub struct Task<V, T: Future<Output = V>> {
+pub struct Task<T: Future> {
     future: T,
     task_data: TaskData,
-    result: Value<V>,
+    result: Value<T::Output>,
 }
 
-impl<V, T: Future<Output = V>> Task<V, T> {
+impl<T: Future> Task<T> {
     /// Create a new task wrapping the specified `future`.
     pub fn new(future: T) -> Self {
         Self {
@@ -26,12 +26,12 @@ impl<V, T: Future<Output = V>> Task<V, T> {
     }
 
     /// Get a reference to a "join-handle" that can be awaited on.
-    pub fn join_handle(&mut self) -> &mut Value<V> {
+    pub fn join_handle(&mut self) -> &mut Value<T::Output> {
         &mut self.result
     }
 }
 
-impl<V, T: Future<Output = V>> crate::executor::Task for Task<V, T> {
+impl<T: Future> crate::executor::Task for Task<T> {
     fn mut_task_data(&mut self) -> &mut TaskData {
         &mut self.task_data
     }
