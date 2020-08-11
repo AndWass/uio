@@ -3,21 +3,12 @@ use core::sync::atomic::{AtomicU8, Ordering, AtomicPtr};
 
 use core::pin::Pin;
 use core::mem::MaybeUninit;
-use core::task::Poll;
 use core::ops::{BitOr, BitAnd};
+
+use crate::task_list::TaskList;
 
 static mut CURRENT_TASK_FLAG: AtomicPtr<AtomicU8> = AtomicPtr::new(core::ptr::null_mut());
 static mut TASK_LIST: MaybeUninit<TaskList> = MaybeUninit::uninit();
-
-struct EmptyFuture {}
-
-impl core::future::Future for EmptyFuture {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(())
-    }
-}
 
 fn task_list() -> &'static mut TaskList {
     static mut TASK_LIST_INIT: bool = false;
@@ -28,66 +19,6 @@ fn task_list() -> &'static mut TaskList {
         }
 
         &mut *TASK_LIST.as_mut_ptr()
-    }
-}
-
-struct TaskList {
-    head: *mut dyn Task,
-}
-
-impl TaskList {
-    fn end_item() -> *mut dyn Task {
-        static mut END_TASK: MaybeUninit<crate::task::Task<EmptyFuture>> = MaybeUninit::uninit();
-        static mut END_INIT: bool = false;
-
-        unsafe {
-            if !END_INIT {
-                END_INIT = true;
-                END_TASK = MaybeUninit::new(crate::task::Task::new(EmptyFuture{}));
-            }
-            END_TASK.as_mut_ptr()
-        }
-    }
-    fn new() -> Self {
-        let null: *mut dyn Task = Self::end_item();
-        Self {
-            head: null,
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.head == Self::end_item()
-    }
-
-    fn push_front(&mut self, item: *mut dyn Task) {
-        let item = unsafe { &mut *item };
-        item.mut_task_data().next = self.head;
-        self.head = item;
-    }
-
-    fn pop_front(&mut self) -> *mut dyn Task {
-        let retval = unsafe { &mut *self.head };
-        self.head = retval.mut_task_data().next;
-        retval
-    }
-
-    fn take(&mut self) -> Self {
-        let retval = core::mem::replace(&mut self.head, Self::end_item());
-        Self {
-            head: retval,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn merge(&mut self, mut other: TaskList) {
-        if self.is_empty() {
-            self.head = other.head;
-        }
-        else {
-            while !other.is_empty() {
-                self.push_front(other.pop_front());
-            }
-        }
     }
 }
 
@@ -102,7 +33,7 @@ impl TaskList {
 /// executor.
 pub struct TaskData {
     ready_flag: AtomicU8,
-    next: *mut dyn Task,
+    pub(crate) next: *mut dyn Task,
 }
 
 impl TaskData {
@@ -153,8 +84,8 @@ impl TaskData {
 /// when it is dropped the drop code will panic.
 impl Drop for TaskData {
     fn drop(&mut self) {
-        if self.ready_flag.load(Ordering::Acquire) != 0 {
-            panic!("Task dropped while either ready to poll or still running");
+        if (self.ready_flag.load(Ordering::Acquire) & 0b0000_0010) != 0 {
+            panic!("Task dropped while it is still running");
         }
     }
 }
@@ -237,7 +168,7 @@ pub fn run() {
 /// # Arguments
 ///
 /// * `task` - The task to start.
-pub fn start(task: &mut (dyn Task + 'static)) {
+pub fn start<'a, T: Task + 'static>(task: &'a mut T) {
     task.mut_task_data().set_started();
     task.mut_task_data().set_ready_to_poll();
     task_list().push_front(task);

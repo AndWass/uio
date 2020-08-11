@@ -56,18 +56,20 @@ impl<T> Value<T> {
     }
 }
 
-impl<T> Future for Value<T> {
+impl<T: core::marker::Unpin> core::marker::Unpin for Value<T> {}
+
+impl<T: core::marker::Unpin> Future for Value<T> {
     type Output = T;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut_self = unsafe { self.get_unchecked_mut() };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        //let mut_self = unsafe { self.get_unchecked_mut() };
 
-        if mut_self.has_value() {
-            Poll::Ready(unsafe { mut_self.take_value() })
+        if self.has_value() {
+            Poll::Ready(unsafe { self.take_value() })
         }
         else {
-            mut_self.waker = MaybeUninit::new(cx.waker().clone());
-            mut_self.flags.fetch_or(HAS_WAKER_FLAG, Ordering::AcqRel);
+            self.waker = MaybeUninit::new(cx.waker().clone());
+            self.flags.fetch_or(HAS_WAKER_FLAG, Ordering::AcqRel);
             Poll::Pending
         }
     }

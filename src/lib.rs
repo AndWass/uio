@@ -81,3 +81,11 @@ pub mod executor;
 pub mod task;
 /// Asynchronous values.
 pub mod future;
+/// I/O traits and helpers.
+pub mod digital;
+/// Interrupt traits and helpers.
+pub mod interrupt;
+/// Re-export embedded hal
+pub use embedded_hal;
+
+mod task_list;
