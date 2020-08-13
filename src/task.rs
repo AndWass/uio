@@ -2,11 +2,11 @@
 //!
 //! The task wraps a future and allows it to be started by the executor.
 
-use core::future::Future;
-use core::task::{Context, Poll};
-use core::pin::Pin;
 use crate::executor::TaskData;
 use crate::future::Value;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 
 /// Task structure, wrapping a future allowing it to be run by the executor.
 pub struct Task<T: Future> {

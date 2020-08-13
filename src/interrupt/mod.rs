@@ -1,4 +1,7 @@
-
 mod waker;
 
-pub type Waker = waker::Waker;
+pub use waker::{
+    Waker,
+    WakerRef,
+    Wakable,
+};

@@ -1,9 +1,9 @@
-use core::task::{Waker, RawWaker, RawWakerVTable, Context};
-use core::sync::atomic::{AtomicU8, Ordering, AtomicPtr};
+use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+use core::task::{Context, RawWaker, RawWakerVTable, Waker};
 
-use core::pin::Pin;
 use core::mem::MaybeUninit;
-use core::ops::{BitOr, BitAnd};
+use core::ops::{BitAnd, BitOr};
+use core::pin::Pin;
 
 use crate::task_list::TaskList;
 
@@ -102,7 +102,7 @@ pub trait Task {
 enum TaskResult {
     NotReady,
     Pending,
-    Finished
+    Finished,
 }
 
 fn maybe_poll_task(task: &mut (dyn Task + 'static)) -> TaskResult {
@@ -116,10 +116,9 @@ fn maybe_poll_task(task: &mut (dyn Task + 'static)) -> TaskResult {
         let mut context = Context::from_waker(&waker);
         match pinned_fut.poll(&mut context) {
             core::task::Poll::Ready(_) => TaskResult::Finished,
-            _ => TaskResult::Pending
+            _ => TaskResult::Pending,
         }
-    }
-    else {
+    } else {
         TaskResult::NotReady
     }
 }
@@ -145,10 +144,9 @@ pub fn run() {
             let task_list = task_list();
             while !available_tasks.is_empty() {
                 let next_task = available_tasks.pop_front();
-                match maybe_poll_task(&mut *next_task)
-                {
+                match maybe_poll_task(&mut *next_task) {
                     TaskResult::NotReady | TaskResult::Pending => task_list.push_front(next_task),
-                    TaskResult::Finished => (&mut *next_task).mut_task_data().set_finished()
+                    TaskResult::Finished => (&mut *next_task).mut_task_data().set_finished(),
                 }
             }
         }
@@ -203,6 +201,7 @@ fn raw_wake(data: *const ()) {
 }
 
 fn make_raw_waker(data: *const ()) -> RawWaker {
-    static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(make_raw_waker, raw_wake, raw_wake, |_|());
+    static WAKER_VTABLE: RawWakerVTable =
+        RawWakerVTable::new(make_raw_waker, raw_wake, raw_wake, |_| ());
     RawWaker::new(data, &WAKER_VTABLE)
 }

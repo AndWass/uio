@@ -1,7 +1,7 @@
-use core::task::{Waker, Poll, Context};
 use core::future::Future;
-use core::pin::Pin;
 use core::mem::MaybeUninit;
+use core::pin::Pin;
+use core::task::{Context, Poll, Waker};
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -43,10 +43,11 @@ impl<T> Value<T> {
     fn take_waker(&mut self) -> Option<Waker> {
         if !self.has_waker() {
             None
-        }
-        else {
+        } else {
             self.flags.fetch_and(!HAS_WAKER_FLAG, Ordering::AcqRel);
-            Some(unsafe { core::mem::replace(&mut self.waker, MaybeUninit::uninit()).assume_init() })
+            Some(unsafe {
+                core::mem::replace(&mut self.waker, MaybeUninit::uninit()).assume_init()
+            })
         }
     }
 
@@ -66,8 +67,7 @@ impl<T: core::marker::Unpin> Future for Value<T> {
 
         if self.has_value() {
             Poll::Ready(unsafe { self.take_value() })
-        }
-        else {
+        } else {
             self.waker = MaybeUninit::new(cx.waker().clone());
             self.flags.fetch_or(HAS_WAKER_FLAG, Ordering::AcqRel);
             Poll::Pending

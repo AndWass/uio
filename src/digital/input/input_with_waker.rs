@@ -1,17 +1,14 @@
-use embedded_hal::digital::InputPin;
 use crate::digital::input::{AsyncInputPin, HighInputPin, LowInputPin};
+use embedded_hal::digital::InputPin;
 
 pub struct InputWithWaker<P> {
     pin: P,
-    waker: &'static crate::interrupt::Waker
+    waker: &'static crate::interrupt::Waker,
 }
 
 impl<P> InputWithWaker<P> {
     pub fn new(pin: P, waker: &'static crate::interrupt::Waker) -> Self {
-        Self {
-            pin,
-            waker
-        }
+        Self { pin, waker }
     }
 
     pub fn free(self) -> P {
@@ -20,7 +17,9 @@ impl<P> InputWithWaker<P> {
 }
 
 impl<P> InputPin for InputWithWaker<P>
-    where P: InputPin {
+where
+    P: InputPin,
+{
     type Error = P::Error;
 
     fn try_is_high(&self) -> Result<bool, Self::Error> {
@@ -33,7 +32,9 @@ impl<P> InputPin for InputWithWaker<P>
 }
 
 impl<P> AsyncInputPin for InputWithWaker<P>
-    where P: InputPin {
+where
+    P: InputPin,
+{
     fn wait_until_high<'a>(&'a self) -> HighInputPin<'a, Self> {
         HighInputPin::new(self, self.waker)
     }

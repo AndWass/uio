@@ -32,14 +32,13 @@ impl Delay{
 impl Future for Delay {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         if self.done {
             Ready(())
         }
         else {
             let sleep_time = self.sleep_time;
-            let mut_self = unsafe { self.get_unchecked_mut() };
-            mut_self.done = true;
+            self.done = true;
             let waker = cx.waker().clone();
             spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(sleep_time.into()));

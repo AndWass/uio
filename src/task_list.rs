@@ -1,9 +1,9 @@
-use crate::executor::{Task};
+use crate::executor::Task;
 
 use core::mem::MaybeUninit;
 
-use core::task::{Context, Poll};
 use core::pin::Pin;
+use core::task::{Context, Poll};
 
 struct EmptyFuture {}
 
@@ -27,16 +27,14 @@ impl TaskList {
         unsafe {
             if !END_INIT {
                 END_INIT = true;
-                END_TASK = MaybeUninit::new(crate::task::Task::new(EmptyFuture{}));
+                END_TASK = MaybeUninit::new(crate::task::Task::new(EmptyFuture {}));
             }
             END_TASK.as_mut_ptr()
         }
     }
     pub fn new() -> Self {
         let null: *mut dyn Task = Self::end_item();
-        Self {
-            head: null,
-        }
+        Self { head: null }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -57,17 +55,14 @@ impl TaskList {
 
     pub fn take(&mut self) -> Self {
         let retval = core::mem::replace(&mut self.head, Self::end_item());
-        Self {
-            head: retval,
-        }
+        Self { head: retval }
     }
 
     #[allow(dead_code)]
     pub fn merge(&mut self, mut other: TaskList) {
         if self.is_empty() {
             self.head = other.head;
-        }
-        else {
+        } else {
             while !other.is_empty() {
                 self.push_front(other.pop_front());
             }

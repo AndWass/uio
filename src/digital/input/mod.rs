@@ -1,4 +1,3 @@
-
 mod async_input_pin;
 pub use async_input_pin::AsyncInputPin;
 pub use async_input_pin::HighInputPin;
