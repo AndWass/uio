@@ -86,6 +86,7 @@ pub mod interrupt;
 pub mod serial;
 /// Types for working with tasks.
 pub mod task;
+pub mod sync;
 /// Re-export embedded hal
 pub use embedded_hal;
 
