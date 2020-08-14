@@ -1,15 +1,11 @@
 use core::task::{Poll, Waker};
 
-use core::pin::Pin;
 use core::cell::UnsafeCell;
+use core::pin::Pin;
 
-pub struct SendError {
+pub struct SendError {}
 
-}
-
-pub struct RecvError {
-
-}
+pub struct RecvError {}
 
 enum TrySendError<T> {
     Full(T),
@@ -27,7 +23,7 @@ trait ChannelTrait<T: Clone> {
     fn try_recv(&self) -> Result<T, TryRecvError>;
     fn add_waiting_sender(&self, future: &SendFuture<T>);
     fn add_waiting_receiver(&self, future: &RecvFuture<T>);
-    
+
     fn add_sender(&self);
     fn drop_sender(&self);
     fn add_receiver(&self);
@@ -47,9 +43,7 @@ struct SendFuture<T: Clone> {
 
 impl<T: Clone> SendFuture<T> {
     fn sender(&self) -> &Sender<T> {
-        unsafe {
-            self.sender.as_ref().unwrap()
-        }
+        unsafe { self.sender.as_ref().unwrap() }
     }
 
     fn wake(&self) {
@@ -63,15 +57,14 @@ impl<T: Clone> Unpin for SendFuture<T> {}
 
 impl<T: Clone> core::future::Future for SendFuture<T> {
     type Output = Result<(), SendError>;
-    fn poll(mut self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> core::task::Poll<Self::Output> {
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
         let value = self.value.take().unwrap();
         match self.sender().channel_ref().try_send(value) {
-            Ok(()) => {
-                Poll::Ready(Ok(()))
-            },
-            Err(TrySendError::Disconnected(_)) => {
-                Poll::Ready(Err(SendError{}))
-            }
+            Ok(()) => Poll::Ready(Ok(())),
+            Err(TrySendError::Disconnected(_)) => Poll::Ready(Err(SendError {})),
             Err(TrySendError::Full(msg)) => {
                 self.waker = UnsafeCell::new(Some(cx.waker().clone()));
                 self.sender().channel_ref().add_waiting_sender(&*self);
@@ -82,16 +75,15 @@ impl<T: Clone> core::future::Future for SendFuture<T> {
     }
 }
 
-pub struct Sender<T: Clone>
-{
-    channel: *mut dyn ChannelTrait<T>
+pub struct Sender<T: Clone> {
+    channel: *mut dyn ChannelTrait<T>,
 }
 
 impl<T: Clone> Clone for Sender<T> {
     fn clone(&self) -> Self {
         self.channel_ref().add_sender();
         Self {
-            channel: self.channel
+            channel: self.channel,
         }
     }
 }
@@ -99,7 +91,7 @@ impl<T: Clone> Clone for Sender<T> {
 impl<T: Clone> Drop for Sender<T> {
     fn drop(&mut self) {
         self.channel_ref().drop_sender();
-    }    
+    }
 }
 
 impl<'a, T: Clone> Sender<T> {
@@ -116,8 +108,9 @@ impl<'a, T: Clone> Sender<T> {
             sender: self,
             value: Some(message),
             waker: UnsafeCell::new(None),
-            next: UnsafeCell::new(core::ptr::null())
-        }.await
+            next: UnsafeCell::new(core::ptr::null()),
+        }
+        .await
     }
 }
 
@@ -129,9 +122,7 @@ struct RecvFuture<T: Clone> {
 
 impl<T: Clone> RecvFuture<T> {
     fn receiver(&self) -> &Receiver<T> {
-        unsafe {
-            self.receiver.as_ref().unwrap()
-        }
+        unsafe { self.receiver.as_ref().unwrap() }
     }
 
     fn wake(&self) {
@@ -145,14 +136,13 @@ impl<T: Clone> Unpin for RecvFuture<T> {}
 
 impl<T: Clone> core::future::Future for RecvFuture<T> {
     type Output = Result<T, RecvError>;
-    fn poll(mut self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> core::task::Poll<Self::Output> {
+    fn poll(
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
         match self.receiver().channel_ref().try_recv() {
-            Ok(value) => {
-                Poll::Ready(Ok(value))
-            },
-            Err(TryRecvError::Disconnected) => {
-                Poll::Ready(Err(RecvError{}))
-            },
+            Ok(value) => Poll::Ready(Ok(value)),
+            Err(TryRecvError::Disconnected) => Poll::Ready(Err(RecvError {})),
             Err(TryRecvError::Empty) => {
                 self.waker = UnsafeCell::new(Some(cx.waker().clone()));
                 self.receiver().channel_ref().add_waiting_receiver(&*self);
@@ -162,16 +152,15 @@ impl<T: Clone> core::future::Future for RecvFuture<T> {
     }
 }
 
-pub struct Receiver<T: Clone>
-{
-    channel: *mut dyn ChannelTrait<T>
+pub struct Receiver<T: Clone> {
+    channel: *mut dyn ChannelTrait<T>,
 }
 
 impl<T: Clone> Clone for Receiver<T> {
     fn clone(&self) -> Self {
         self.channel_ref().add_receiver();
         Self {
-            channel: self.channel
+            channel: self.channel,
         }
     }
 }
@@ -195,12 +184,12 @@ impl<T: Clone> Receiver<T> {
             receiver: self,
             waker: UnsafeCell::new(None),
             next: UnsafeCell::new(core::ptr::null()),
-        }.await
+        }
+        .await
     }
 }
 
-struct ChannelData<'a, T: Clone>
-{
+struct ChannelData<'a, T: Clone> {
     buffer: &'a mut [T],
     read_pos: usize,
     write_pos: usize,
@@ -210,8 +199,7 @@ struct ChannelData<'a, T: Clone>
     receiver_ref_count: i32,
 }
 
-impl<'a, T: Clone> ChannelData<'a, T>
-{
+impl<'a, T: Clone> ChannelData<'a, T> {
     fn wake_one_receiver(&mut self) -> bool {
         if !self.waiting_receivers.is_null() {
             let to_notify = self.waiting_receivers;
@@ -221,8 +209,7 @@ impl<'a, T: Clone> ChannelData<'a, T>
                 to_notify.wake();
             }
             true
-        }
-        else {
+        } else {
             false
         }
     }
@@ -240,8 +227,7 @@ impl<'a, T: Clone> ChannelData<'a, T>
                 to_notify.wake();
             }
             true
-        }
-        else {
+        } else {
             false
         }
     }
@@ -261,8 +247,7 @@ macro_rules! channel {
     };
 }
 
-pub struct Channel<'a, T: Clone>
-{
+pub struct Channel<'a, T: Clone> {
     data: core::cell::UnsafeCell<ChannelData<'a, T>>,
 }
 
@@ -280,7 +265,7 @@ impl<'a, T: Clone> Channel<'a, T> {
                 waiting_receivers: core::ptr::null(),
                 sender_ref_count: 0,
                 receiver_ref_count: 0,
-            })
+            }),
         }
     }
 
@@ -291,11 +276,11 @@ impl<'a, T: Clone> Channel<'a, T> {
         }
         (
             Sender {
-                channel: &*self as *const dyn ChannelTrait<T> as *mut dyn ChannelTrait<T>
+                channel: &*self as *const dyn ChannelTrait<T> as *mut dyn ChannelTrait<T>,
             },
             Receiver {
-                channel: &*self as *const dyn ChannelTrait<T> as *mut dyn ChannelTrait<T>
-            }
+                channel: &*self as *const dyn ChannelTrait<T> as *mut dyn ChannelTrait<T>,
+            },
         )
     }
 
@@ -304,13 +289,11 @@ impl<'a, T: Clone> Channel<'a, T> {
     }
 
     unsafe fn channel_data(&self) -> &ChannelData<T> {
-        & *self.data.get()
+        &*self.data.get()
     }
 
     fn capacity(&self) -> usize {
-        unsafe {
-            self.channel_data().buffer.len()
-        }
+        unsafe { self.channel_data().buffer.len() }
     }
 
     fn is_empty(&self) -> bool {
@@ -326,12 +309,10 @@ impl<'a, T: Clone> Channel<'a, T> {
             if data.read_pos == 0 {
                 // About to wrap around and read is at 0, so we are full!
                 data.write_pos == data.buffer.len() - 1
-            }
-            else if data.read_pos > data.write_pos {
+            } else if data.read_pos > data.write_pos {
                 // About to catch up to read position, so we are full
                 data.write_pos + 1 == data.read_pos
-            }
-            else {
+            } else {
                 false
             }
         }
@@ -342,11 +323,9 @@ impl<'a, T: Clone> Channel<'a, T> {
             let data = self.channel_data();
             if data.sender_ref_count == 0 && self.is_empty() {
                 true
-            }
-            else if data.receiver_ref_count == 0 {
+            } else if data.receiver_ref_count == 0 {
                 true
-            }
-            else {
+            } else {
                 false
             }
         }
@@ -355,11 +334,9 @@ impl<'a, T: Clone> Channel<'a, T> {
     fn try_send(&self, message: T) -> Result<(), TrySendError<T>> {
         if self.is_disconnected() {
             Err(TrySendError::Disconnected(message))
-        }
-        else if self.is_full() {
+        } else if self.is_full() {
             Err(TrySendError::Full(message))
-        }
-        else {
+        } else {
             unsafe {
                 let mut data = self.mut_channel_data();
                 let write_pos = data.write_pos;
@@ -374,11 +351,9 @@ impl<'a, T: Clone> Channel<'a, T> {
     fn try_recv(&self) -> Result<T, TryRecvError> {
         if self.is_disconnected() {
             Err(TryRecvError::Disconnected)
-        }
-        else if self.is_empty() {
+        } else if self.is_empty() {
             Err(TryRecvError::Empty)
-        }
-        else {
+        } else {
             unsafe {
                 let mut data = self.mut_channel_data();
                 let read_pos = data.read_pos;
@@ -398,7 +373,7 @@ impl<'a, T: Clone> ChannelTrait<T> for Channel<'a, T> {
     fn try_send(&self, value: T) -> Result<(), TrySendError<T>> {
         self.try_send(value)
     }
-    
+
     fn try_recv(&self) -> Result<T, TryRecvError> {
         self.try_recv()
     }
@@ -451,9 +426,7 @@ impl<'a, T: Clone> ChannelTrait<T> for Channel<'a, T> {
         unsafe {
             self.mut_channel_data().receiver_ref_count += 1;
         }
-    }    
-
-    
+    }
 }
 
 impl<T: Clone> Drop for Channel<'_, T> {

@@ -1,9 +1,3 @@
 mod channel;
 
-pub use channel::{
-    Channel,
-    Sender,
-    Receiver,
-    SendError,
-    RecvError,
-};
+pub use channel::{Channel, Receiver, RecvError, SendError, Sender};

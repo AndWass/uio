@@ -1,4 +1,4 @@
-use crate::interrupt::{Waker, WakerRef, Wakable};
+use crate::interrupt::{Wakable, Waker, WakerRef};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
@@ -18,10 +18,7 @@ pub trait AsyncWrite: PollWrite + Wakable {
     }
 }
 
-impl<T> AsyncWrite for T
-where T: PollWrite + Wakable {
-    
-}
+impl<T> AsyncWrite for T where T: PollWrite + Wakable {}
 
 pub struct WriteFuture<'a, T: ?Sized> {
     pub(crate) writer: &'a mut T,
@@ -90,10 +87,8 @@ pub async fn write<W: AsyncWrite>(writer: &mut W, buffer: &[u8]) -> Result<(), (
 
         if amount_written == buffer.len() {
             return Ok(());
-        }
-        else if amount_written > buffer.len() {
+        } else if amount_written > buffer.len() {
             panic!("Amount written is greater than buffer length!")
         }
     }
 }
-

@@ -1,7 +1,3 @@
 mod waker;
 
-pub use waker::{
-    Waker,
-    WakerRef,
-    Wakable,
-};
+pub use waker::{Wakable, Waker, WakerRef};

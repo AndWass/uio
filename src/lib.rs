@@ -84,9 +84,9 @@ pub mod future;
 pub mod interrupt;
 /// Serial I/O traits and helpers.
 pub mod serial;
+pub mod sync;
 /// Types for working with tasks.
 pub mod task;
-pub mod sync;
 /// Re-export embedded hal
 pub use embedded_hal;
 

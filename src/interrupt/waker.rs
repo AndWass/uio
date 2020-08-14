@@ -1,6 +1,6 @@
 use core::cell::Cell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicBool, Ordering, AtomicPtr};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use core::task;
 
 pub trait Wakable {
@@ -52,7 +52,7 @@ impl Waker {
 unsafe impl Sync for Waker {}
 
 pub struct WakerRef {
-    waker: AtomicPtr<Waker>
+    waker: AtomicPtr<Waker>,
 }
 
 impl WakerRef {
@@ -69,17 +69,21 @@ impl WakerRef {
 
     pub fn new(waker: &'static Waker) -> Self {
         Self {
-            waker: AtomicPtr::new(waker as *const Waker as *mut Waker)
+            waker: AtomicPtr::new(waker as *const Waker as *mut Waker),
         }
     }
 
     pub fn assign(&self, other: &Self) {
-        self.waker.store(other.waker.load(Ordering::Acquire), Ordering::Release);
+        self.waker
+            .store(other.waker.load(Ordering::Acquire), Ordering::Release);
     }
 
     pub fn try_wake(&self) -> bool {
         unsafe {
-            self.waker_ref().and_then(|w| Some(w.try_wake())).or(Some(false)).unwrap()
+            self.waker_ref()
+                .and_then(|w| Some(w.try_wake()))
+                .or(Some(false))
+                .unwrap()
         }
     }
 
@@ -90,19 +94,16 @@ impl WakerRef {
     }
 
     pub fn take_waker(&self) -> Option<task::Waker> {
-        unsafe {
-            self.waker_ref().and_then(|w| w.take_waker())
-        }
+        unsafe { self.waker_ref().and_then(|w| w.take_waker()) }
     }
 }
 
 impl Clone for WakerRef {
     fn clone(&self) -> Self {
         Self {
-            waker: AtomicPtr::new(self.waker.load(Ordering::Acquire))
+            waker: AtomicPtr::new(self.waker.load(Ordering::Acquire)),
         }
     }
-    
 }
 
 unsafe impl Send for WakerRef {}

@@ -178,7 +178,6 @@ pub fn run() {
     }
 }
 
-
 /// Start a task, scheduling it to be run.
 ///
 /// This can be called both before `run()` and within async functions.
@@ -187,15 +186,13 @@ pub fn run() {
 ///
 /// * `task` - The task to start.
 pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> JoinHandle<T::Output> {
-    let task = unsafe {
-        task.get_unchecked_mut()
-    };
+    let task = unsafe { task.get_unchecked_mut() };
     task.mut_task_data().set_started();
     task.mut_task_data().set_ready_to_poll();
     task_list().push_front(&mut *task);
 
     JoinHandle {
-        value: task.value_ptr()
+        value: task.value_ptr(),
     }
 }
 
