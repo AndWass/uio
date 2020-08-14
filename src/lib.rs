@@ -59,17 +59,15 @@
 //! }
 //!
 //! async fn task_1() {
-//!     let mut task2 = uio::task::Task::new(task_2(2));
-//!     uio::executor::start(&mut task2);
+//!     uio::task_start!(task2, task_2(2));
 //!
-//!     println!("Task 2 took {} milliseconds", task2.join_handle().await);
+//!     println!("Task 2 took {} milliseconds", task2.join().await);
 //! }
 //!
 //! fn main() {
 //!     // Creation and starting of tasks are decoupled to allow for intrusive
 //!     // handling of tasks.
-//!     let mut main_task = uio::task::Task::new(task_1());
-//!     uio::executor::start(&mut main_task);
+//!     uio::task_start!(main_task, task_1());
 //!     uio::executor::run();
 //! }
 //! ```

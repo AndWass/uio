@@ -1,20 +1,9 @@
-# uio
-
-This library contains an async executor targeting `no_std` embedded boards without
-any allocator support.
-
-This is done in an intrusive approach where tasks must implement the `executor::Task` trait.
-
-### Example
-
-```rust
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Poll::*;
 use core::task::{Context, Poll};
 use std::thread::spawn;
 
-// A future representing our mock producer
 pub struct Producer {
     value: Option<u32>,
 }
@@ -28,7 +17,7 @@ impl Producer {
         }
     }
 }
-// We can await the producer
+
 impl Future for Producer {
     type Output = u32;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -48,7 +37,6 @@ impl Future for Producer {
     }
 }
 
-// Clone is required for our channel later on.
 #[derive(Copy, Clone)]
 struct Job {
     producer: u32,
@@ -140,13 +128,11 @@ async fn producer(id: u32, sender: uio::sync::Sender<Job>)
 
 fn main() {
     use uio::{task_start, channel};
-    // Create a channel, initialized with 10 Job::new()
-    // values.
+    // Create a channel
     channel!(job_channel, Job::new(), 10);
     // Get a sender and receiver to the channel
     let (s1, recv1) = job_channel.split();
     
-    // Start a bunch of producers.
     task_start!(producer1, producer(1, s1.clone()));
     task_start!(producer2, producer(2, s1.clone()));
     task_start!(producer3, producer(3, s1.clone()));
@@ -154,11 +140,8 @@ fn main() {
     task_start!(producer5, producer(5, s1.clone()));
     task_start!(producer6, producer(6, s1));
 
-    // Not as many consumers though
     task_start!(consumer1, consumer(1, recv1.clone()));
     task_start!(consumer2, consumer(2, recv1));
 
     uio::executor::run();
 }
-
-```

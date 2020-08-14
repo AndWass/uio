@@ -3,17 +3,34 @@
 //! The task wraps a future and allows it to be started by the executor.
 
 use crate::executor::TaskData;
-use crate::future::Value;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+
+#[macro_export]
+macro_rules! task_decl {
+    ($name:ident, $val:expr) => {
+        let $name = uio::task::Task::new($val);
+        pin_utils::pin_mut!($name);
+    };
+}
+
+#[macro_export]
+macro_rules! task_start {
+    ($name:ident, $val:expr) => {
+        uio::task_decl!($name, $val);
+        let $name = uio::executor::start($name);
+    };
+}
 
 /// Task structure, wrapping a future allowing it to be run by the executor.
 pub struct Task<T: Future> {
     future: T,
     task_data: TaskData,
-    result: Value<T::Output>,
+    value: crate::future::Value<T::Output>,
 }
+
+impl<T: Future> Unpin for Task<T> {}
 
 impl<T: Future> Task<T> {
     /// Create a new task wrapping the specified `future`.
@@ -21,13 +38,8 @@ impl<T: Future> Task<T> {
         Self {
             future,
             task_data: crate::executor::TaskData::new(),
-            result: crate::future::Value::new(),
+            value: crate::future::Value::new(),
         }
-    }
-
-    /// Get a reference to a "join-handle" that can be awaited on.
-    pub fn join_handle(&mut self) -> &mut Value<T::Output> {
-        &mut self.result
     }
 }
 
@@ -36,15 +48,21 @@ impl<T: Future> crate::executor::Task for Task<T> {
         &mut self.task_data
     }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let mut_self = unsafe { self.get_unchecked_mut() };
-        let future = unsafe { Pin::new_unchecked(&mut mut_self.future) };
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let future = unsafe { Pin::new_unchecked(&mut self.future) };
         match future.poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(r) => {
-                mut_self.result.set(r);
+                self.value.set(r);
                 Poll::Ready(())
             }
         }
+    }
+}
+
+impl<T: Future> crate::executor::TypedTask for Task<T> {
+    type Output = T::Output;
+    fn value_ptr(&mut self) -> *mut crate::future::Value<Self::Output> {
+        &mut self.value as *mut crate::future::Value<Self::Output>
     }
 }
