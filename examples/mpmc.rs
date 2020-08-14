@@ -90,7 +90,7 @@ async fn consumer(id: u32, receiver: uio::sync::Receiver<Job>)
             Ok(job) => {
                 job_count += 1;
                 println!("CONSUMER {} received {} from {}", id, job.value, job.producer);
-                println!("CONSUMER {} sleeping for {}ms", id, job.value & 0x03FF);
+                println!("CONSUMER {} sleeping for {}ms", id, job.value & 0x00FF);
                 task_sleep(job.value & 0x00FF).await;
             },
             Err(_) => {
