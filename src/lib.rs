@@ -72,6 +72,8 @@
 //! }
 //! ```
 
+pub use pin_utils;
+
 /// I/O traits and helpers.
 pub mod digital;
 /// Executor types, traits and functions.

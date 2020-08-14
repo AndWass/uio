@@ -11,14 +11,14 @@ use core::task::{Context, Poll};
 macro_rules! task_decl {
     ($name:ident, $val:expr) => {
         let $name = uio::task::Task::new($val);
-        pin_utils::pin_mut!($name);
+        $crate::pin_utils::pin_mut!($name);
     };
 }
 
 #[macro_export]
 macro_rules! task_start {
     ($name:ident, $val:expr) => {
-        uio::task_decl!($name, $val);
+        $crate::task_decl!($name, $val);
         let $name = uio::executor::start($name);
     };
 }
