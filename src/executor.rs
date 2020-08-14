@@ -98,6 +98,25 @@ pub trait Task {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> core::task::Poll<()>;
 }
 
+pub struct JoinHandle<T> {
+    value: *mut crate::future::Value<T>,
+}
+
+impl<T: Unpin> JoinHandle<T> {
+    pub async fn join(self) -> T {
+        unsafe {
+            let value = &mut *self.value;
+            value.await
+        }
+    }
+}
+
+pub trait TypedTask: Task {
+    type Output;
+
+    fn value_ptr(&mut self) -> *mut crate::future::Value<Self::Output>;
+}
+
 #[derive(PartialOrd, PartialEq)]
 enum TaskResult {
     NotReady,
@@ -159,6 +178,7 @@ pub fn run() {
     }
 }
 
+
 /// Start a task, scheduling it to be run.
 ///
 /// This can be called both before `run()` and within async functions.
@@ -166,10 +186,17 @@ pub fn run() {
 /// # Arguments
 ///
 /// * `task` - The task to start.
-pub fn start<'a, T: Task + 'static>(task: &'a mut T) {
+pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> JoinHandle<T::Output> {
+    let task = unsafe {
+        task.get_unchecked_mut()
+    };
     task.mut_task_data().set_started();
     task.mut_task_data().set_ready_to_poll();
-    task_list().push_front(task);
+    task_list().push_front(&mut *task);
+
+    JoinHandle {
+        value: task.value_ptr()
+    }
 }
 
 fn set_current_task_flag(flag: &mut AtomicU8) {
