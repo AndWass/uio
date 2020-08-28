@@ -3,10 +3,6 @@ use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use core::task;
 
-pub trait Wakable {
-    fn waker_ref(&self) -> WakerRef;
-}
-
 pub struct Waker {
     waker: core::cell::Cell<MaybeUninit<task::Waker>>,
     has_waker: AtomicBool,
@@ -47,6 +43,10 @@ impl Waker {
             })
             .unwrap_or(false)
     }
+
+    pub fn has_waker(&self) -> bool {
+        self.has_waker.load(Ordering::Acquire)
+    }
 }
 
 unsafe impl Sync for Waker {}
@@ -67,7 +67,7 @@ impl WakerRef {
         }
     }
 
-    pub fn new(waker: &'static Waker) -> Self {
+    pub fn new(waker: &Waker) -> Self {
         Self {
             waker: AtomicPtr::new(waker as *const Waker as *mut Waker),
         }
@@ -82,8 +82,7 @@ impl WakerRef {
         unsafe {
             self.waker_ref()
                 .and_then(|w| Some(w.try_wake()))
-                .or(Some(false))
-                .unwrap()
+                .or(Some(false)).expect("")
         }
     }
 

@@ -1,80 +1,86 @@
-use embedded_hal::digital::InputPin;
-
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-pub trait AsyncInputPin: InputPin {
-    fn wait_until_high(&self) -> HighInputPin<Self>;
-    fn wait_until_low(&self) -> LowInputPin<Self>;
+pub trait AsyncInputPin {
+    type Error;
+    fn poll_high(&mut self, cx: &mut Context) -> Poll<Result<(), Self::Error>>;
+    fn poll_low(&mut self, cx: &mut Context) -> Poll<Result<(), Self::Error>>;
 }
 
-pub struct HighInputPin<'a, P: ?Sized> {
-    pin: &'a P,
-    waker: &'a crate::interrupt::Waker,
+pub trait AsyncInputExt {
+    type Error;
+    fn wait_until_high(&mut self) -> HighInputFuture<Self>;
+    fn wait_until_low(&mut self) -> LowInputFuture<Self>;
 }
 
-impl<'a, P: ?Sized> core::marker::Unpin for HighInputPin<'a, P> {}
-
-impl<'a, P: ?Sized> HighInputPin<'a, P> {
-    pub fn new(pin: &'a P, waker: &'a crate::interrupt::Waker) -> Self {
-        Self { pin, waker }
-    }
-}
-
-impl<P> Future for HighInputPin<'_, P>
+impl<T> AsyncInputExt for T
 where
-    P: InputPin + ?Sized,
+    T: AsyncInputPin
 {
-    type Output = Result<(), <P as embedded_hal::digital::InputPin>::Error>;
+    type Error = T::Error;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.waker.set_waker(cx.waker().clone());
-        match self.pin.try_is_high() {
-            Err(e) => {
-                self.waker.take_waker();
-                Poll::Ready(Err(e))
-            }
-            Ok(true) => {
-                self.waker.take_waker();
-                Poll::Ready(Ok(()))
-            }
-            Ok(false) => Poll::Pending,
+    fn wait_until_high(&mut self) -> HighInputFuture<Self> {
+        HighInputFuture {
+            pin: self,
+        }
+    }
+
+    fn wait_until_low(&mut self) -> LowInputFuture<Self> {
+        LowInputFuture {
+            pin: self,
         }
     }
 }
 
-pub struct LowInputPin<'a, P: ?Sized> {
-    pin: &'a P,
-    waker: &'a crate::interrupt::Waker,
+pub struct HighInputFuture<'a, P: ?Sized> {
+    pin: &'a mut P,
 }
 
-impl<'a, P: ?Sized> LowInputPin<'a, P> {
-    pub fn new(pin: &'a P, waker: &'a crate::interrupt::Waker) -> Self {
-        Self { pin, waker }
+impl<'a, P: ?Sized> core::marker::Unpin for HighInputFuture<'a, P> {}
+
+impl<P> Future for HighInputFuture<'_, P>
+where
+    P: AsyncInputPin + ?Sized,
+{
+    type Output = Result<(), P::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.pin.poll_high(cx)
     }
 }
 
-impl<'a, P: ?Sized> core::marker::Unpin for LowInputPin<'a, P> {}
-
-impl<P> Future for LowInputPin<'_, P>
+impl<P> crate::future::Cancelable for HighInputFuture<'_, P>
 where
-    P: InputPin + ?Sized,
+    P: crate::future::Cancelable + ?Sized,
 {
-    type Output = Result<(), <P as embedded_hal::digital::InputPin>::Error>;
+    fn cancel_future(&mut self) {
+        self.pin.cancel_future();
+    }
+}
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.waker.set_waker(cx.waker().clone());
-        match self.pin.try_is_high() {
-            Err(e) => {
-                self.waker.take_waker();
-                Poll::Ready(Err(e))
-            }
-            Ok(false) => {
-                self.waker.take_waker();
-                Poll::Ready(Ok(()))
-            }
-            Ok(true) => Poll::Pending,
-        }
+pub struct LowInputFuture<'a, P: ?Sized> {
+    pin: &'a mut P,
+}
+
+impl<'a, P: ?Sized> core::marker::Unpin for LowInputFuture<'a, P> {}
+
+impl<P> Future for LowInputFuture<'_, P>
+where
+    P: AsyncInputPin + ?Sized,
+{
+    type Output = Result<(), P::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.pin.poll_low(cx)
+    }
+}
+
+impl<P> crate::future::Cancelable for LowInputFuture<'_, P>
+    where
+        P: crate::future::Cancelable + ?Sized
+{
+    fn cancel_future(&mut self) {
+        self.pin.cancel_future()
     }
 }

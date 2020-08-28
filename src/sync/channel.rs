@@ -43,7 +43,7 @@ struct SendFuture<T: Clone> {
 
 impl<T: Clone> SendFuture<T> {
     fn sender(&self) -> &Sender<T> {
-        unsafe { self.sender.as_ref().unwrap() }
+        unsafe { self.sender.as_ref().expect("") }
     }
 
     fn wake(&self) {
@@ -61,7 +61,7 @@ impl<T: Clone> core::future::Future for SendFuture<T> {
         mut self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Self::Output> {
-        let value = self.value.take().unwrap();
+        let value = self.value.take().expect("");
         match self.sender().channel_ref().try_send(value) {
             Ok(()) => Poll::Ready(Ok(())),
             Err(TrySendError::Disconnected(_)) => Poll::Ready(Err(SendError {})),
@@ -96,7 +96,7 @@ impl<T: Clone> Drop for Sender<T> {
 
 impl<'a, T: Clone> Sender<T> {
     fn channel_ref<'b>(&'b self) -> &'b dyn ChannelTrait<T> {
-        unsafe { self.channel.as_ref().unwrap() }
+        unsafe { self.channel.as_ref().expect("") }
     }
 
     pub fn capacity(&self) -> usize {
@@ -122,7 +122,7 @@ struct RecvFuture<T: Clone> {
 
 impl<T: Clone> RecvFuture<T> {
     fn receiver(&self) -> &Receiver<T> {
-        unsafe { self.receiver.as_ref().unwrap() }
+        unsafe { self.receiver.as_ref().expect("") }
     }
 
     fn wake(&self) {
@@ -173,7 +173,7 @@ impl<T: Clone> Drop for Receiver<T> {
 
 impl<T: Clone> Receiver<T> {
     fn channel_ref(&self) -> &dyn ChannelTrait<T> {
-        unsafe { self.channel.as_ref().unwrap() }
+        unsafe { self.channel.as_ref().expect("") }
     }
     pub fn capacity(&self) -> usize {
         self.channel_ref().capacity()

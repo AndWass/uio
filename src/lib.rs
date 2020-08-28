@@ -85,6 +85,8 @@ pub mod interrupt;
 /// Serial I/O traits and helpers.
 pub mod serial;
 pub mod sync;
+pub mod timer;
+pub mod select;
 /// Types for working with tasks.
 pub mod task;
 /// Re-export embedded hal

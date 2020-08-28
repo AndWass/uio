@@ -5,6 +5,10 @@ use core::task::{Context, Poll, Waker};
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
+pub trait Cancelable {
+    fn cancel_future(&mut self);
+}
+
 const HAS_VALUE_FLAG: u8 = 0b0000_0001;
 const HAS_WAKER_FLAG: u8 = 0b0000_0010;
 

@@ -1,104 +1,53 @@
-use crate::interrupt::{Wakable, Waker, WakerRef};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-pub trait PollRead {
+pub trait AsyncRead {
     type Error;
-    fn poll_read(&mut self, waker: WakerRef, buffer: &mut [u8])
+    fn poll_read(&mut self, cx: &mut Context, buffer: &mut [u8])
         -> Poll<Result<usize, Self::Error>>;
 }
 
-#[cfg(embedded_hal_impl = "serial_read")]
-impl<E> PollRead for dyn embedded_hal::serial::Read<u8, Error = E> {
-    type Error = E;
-    fn poll_read(
-        &mut self,
-        _waker: WakerRef,
-        buffer: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
-        match self.try_read() {
-            Ok(x) => {
-                buffer[0] = x;
-                Poll::Ready(Ok(1))
-            }
-            Err(nb::Error::WouldBlock) => Poll::Pending,
-            Err(nb::Error::Other(err)) => Poll::Ready(Err(err)),
-        }
-    }
-}
-
-pub trait AsyncRead: PollRead + Wakable {
+pub trait AsyncReadExt: AsyncRead {
     fn read_some<'a>(&'a mut self, buffer: &'a mut [u8]) -> ReadFuture<'a, Self> {
-        let waker = self.waker_ref();
         ReadFuture {
             reader: self,
-            buffer: buffer,
-            waker: waker,
+            buffer,
         }
     }
 }
 
-impl<T> AsyncRead for T where T: PollRead + Wakable {}
+impl<T> AsyncReadExt for T where T: AsyncRead {}
 
 pub struct ReadFuture<'a, T: ?Sized> {
     pub(crate) reader: &'a mut T,
     pub(crate) buffer: &'a mut [u8],
-    pub(crate) waker: WakerRef,
 }
 
 impl<'a, T> core::future::Future for ReadFuture<'a, T>
 where
-    T: ?Sized + PollRead,
+    T: ?Sized + AsyncRead,
 {
     type Output = Result<usize, T::Error>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let Self {
             reader,
             buffer,
-            waker,
         } = &mut *self;
 
-        waker.set_waker(cx.waker().clone());
-
-        match reader.poll_read(waker.clone(), buffer) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(r) => {
-                waker.take_waker();
-                Poll::Ready(r)
-            }
-        }
+        reader.poll_read(cx, buffer)
     }
 }
 
-pub struct ReaderWithWaker<R> {
-    reader: R,
-    waker: &'static Waker,
-}
-
-impl<R: PollRead> ReaderWithWaker<R> {
-    pub fn new(reader: R, waker: &'static Waker) -> Self {
-        Self { reader, waker }
+impl<'a, T> crate::future::Cancelable for ReadFuture<'a, T>
+where
+    T: ?Sized + AsyncRead + crate::future::Cancelable
+{
+    fn cancel_future(&mut self) {
+        self.reader.cancel_future();
     }
 }
 
-impl<R: PollRead> PollRead for ReaderWithWaker<R> {
-    type Error = R::Error;
-    fn poll_read(
-        &mut self,
-        waker: WakerRef,
-        buffer: &mut [u8],
-    ) -> Poll<Result<usize, Self::Error>> {
-        self.reader.poll_read(waker, buffer)
-    }
-}
-
-impl<R> Wakable for ReaderWithWaker<R> {
-    fn waker_ref(&self) -> WakerRef {
-        WakerRef::new(self.waker)
-    }
-}
-
-pub async fn read<R: AsyncRead>(
+pub async fn read<R: AsyncReadExt>(
     reader: &mut R,
     buffer: &mut [u8],
 ) -> Result<(), (usize, R::Error)> {

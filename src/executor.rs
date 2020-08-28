@@ -98,11 +98,11 @@ pub trait Task {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> core::task::Poll<()>;
 }
 
-pub struct JoinHandle<T> {
+pub struct TaskResult<T> {
     value: *mut crate::future::Value<T>,
 }
 
-impl<T: Unpin> JoinHandle<T> {
+impl<T: Unpin> TaskResult<T> {
     pub async fn join(self) -> T {
         unsafe {
             let value = &mut *self.value;
@@ -118,27 +118,27 @@ pub trait TypedTask: Task {
 }
 
 #[derive(PartialOrd, PartialEq)]
-enum TaskResult {
+enum TaskState {
     NotReady,
     Pending,
     Finished,
 }
 
-fn maybe_poll_task(task: &mut (dyn Task + 'static)) -> TaskResult {
+fn maybe_poll_task(task: &mut (dyn Task + 'static)) -> TaskState {
     let task_data = task.mut_task_data();
     if task_data.is_ready_to_poll() {
         task_data.clear_ready_to_poll();
         set_current_task_flag(&mut task_data.ready_flag);
 
-        let pinned_fut = unsafe { core::pin::Pin::new_unchecked(task) };
+        let task = unsafe { core::pin::Pin::new_unchecked(task) };
         let waker = make_waker_for_current();
         let mut context = Context::from_waker(&waker);
-        match pinned_fut.poll(&mut context) {
-            core::task::Poll::Ready(_) => TaskResult::Finished,
-            _ => TaskResult::Pending,
+        match task.poll(&mut context) {
+            core::task::Poll::Ready(_) => TaskState::Finished,
+            _ => TaskState::Pending,
         }
     } else {
-        TaskResult::NotReady
+        TaskState::NotReady
     }
 }
 
@@ -164,8 +164,8 @@ pub fn run() {
             while !available_tasks.is_empty() {
                 let next_task = available_tasks.pop_front();
                 match maybe_poll_task(&mut *next_task) {
-                    TaskResult::NotReady | TaskResult::Pending => task_list.push_front(next_task),
-                    TaskResult::Finished => (&mut *next_task).mut_task_data().set_finished(),
+                    TaskState::NotReady | TaskState::Pending => task_list.push_front(next_task),
+                    TaskState::Finished => (&mut *next_task).mut_task_data().set_finished(),
                 }
             }
         }
@@ -185,13 +185,13 @@ pub fn run() {
 /// # Arguments
 ///
 /// * `task` - The task to start.
-pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> JoinHandle<T::Output> {
+pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> TaskResult<T::Output> {
     let task = unsafe { task.get_unchecked_mut() };
     task.mut_task_data().set_started();
     task.mut_task_data().set_ready_to_poll();
     task_list().push_front(&mut *task);
 
-    JoinHandle {
+    TaskResult {
         value: task.value_ptr(),
     }
 }
