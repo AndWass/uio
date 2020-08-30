@@ -89,7 +89,5 @@ pub mod timer;
 pub mod select;
 /// Types for working with tasks.
 pub mod task;
-/// Re-export embedded hal
-pub use embedded_hal;
 
 mod task_list;
