@@ -1,13 +1,13 @@
-use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 use core::task::{Context, RawWaker, RawWakerVTable, Waker};
 
 use core::mem::MaybeUninit;
-use core::ops::{BitAnd, BitOr};
 use core::pin::Pin;
 
 use crate::task_list::TaskList;
+use crate::task::TaskWaker;
 
-static mut CURRENT_TASK_FLAG: AtomicPtr<TaskWaker> = AtomicPtr::new(core::ptr::null_mut());
+static mut CURRENT_TASK_FLAG: AtomicPtr<crate::task::TaskWaker> = AtomicPtr::new(core::ptr::null_mut());
 static mut TASK_LIST: MaybeUninit<TaskList> = MaybeUninit::uninit();
 
 fn task_list() -> &'static mut TaskList {
@@ -22,128 +22,10 @@ fn task_list() -> &'static mut TaskList {
     }
 }
 
-pub struct TaskWaker {
-    ready_flag: AtomicU8,
-}
-
-impl TaskWaker {
-    pub const fn new() -> Self {
-        Self {
-            ready_flag: AtomicU8::new(0)
-        }
-    }
-
-    fn update_flag(&self, update_fn: impl Fn(u8) -> u8) -> u8 {
-        let mut flag_value = self.ready_flag.load(Ordering::Acquire);
-        let mut new_value = update_fn(flag_value);
-        while self.ready_flag.compare_and_swap(flag_value, new_value, Ordering::SeqCst) != flag_value {
-            flag_value = self.ready_flag.load(Ordering::Acquire);
-            new_value = update_fn(flag_value);
-        }
-
-        flag_value
-    }
-
-    fn set_started(&self) {
-        self.update_flag(|value| value.bitor(0b0000_0010));
-    }
-
-    fn set_finished(&self) {
-        self.update_flag(|value| value.bitand(0b1111_1101));
-    }
-
-    fn set_ready_to_poll(&self) {
-        self.update_flag(|value| value.bitor(0x01));
-    }
-
-    fn clear_ready_to_poll(&self) {
-        self.update_flag(|value| value.bitand(0b1111_1110));
-    }
-
-    pub(crate) fn try_take_reference(&self) -> bool {
-        let mut flag_value = self.ready_flag.load(Ordering::Acquire);
-        if flag_value & 0b0000_0100 != 0 {
-            return false;
-        }
-        let mut new_value = flag_value | 0b0000_0100;
-        while self.ready_flag.compare_and_swap(flag_value, new_value, Ordering::SeqCst) != flag_value {
-            flag_value = self.ready_flag.load(Ordering::Acquire);
-            if flag_value & 0b0000_0100 != 0 {
-                return false;
-            }
-            new_value = flag_value | 0b0000_0100;
-        }
-        return true;
-    }
-
-    pub(crate) fn release_reference(&self) -> bool {
-        let mut flag_value = self.ready_flag.load(Ordering::Acquire);
-        if flag_value & 0b0000_0100 == 0 {
-            return false;
-        }
-
-        let mut new_value = flag_value & !0b0000_0100;
-
-        while self.ready_flag.compare_and_swap(flag_value, new_value, Ordering::SeqCst) != flag_value {
-            flag_value = self.ready_flag.load(Ordering::Acquire);
-            if flag_value & 0b0000_0100 == 0 {
-                return false;
-            }
-            new_value = flag_value & !0b0000_0100;
-        }
-        return true;
-    }
-}
-
-/// Any tasks type used by the executor must store an instance of this structure. It must not be changed
-/// by the task once the task has been started.
-///
-/// It is used internally by the executor and cannot be used in any other way.
-///
-/// # Panics
-///
-/// Panics if any instance of TaskData is dropped while the owning task is still active within the
-/// executor.
-pub struct TaskData {
-    waker: &'static TaskWaker,
-    pub(crate) next: *mut dyn Task,
-}
-
-impl TaskData {
-    /// Constructs a new task-data instance. This is the only function available.
-    /// Only used when constructing task-objects.
-    pub fn new(waker: &'static TaskWaker) -> Self {
-        if !waker.try_take_reference() {
-            panic!("Attempting to reuse waker already in use by a different task.");
-        }
-        Self {
-            waker,
-            next: TaskList::end_item(),
-        }
-    }
-
-    fn is_ready_to_poll(&self) -> bool {
-        (self.waker.ready_flag.load(Ordering::Acquire) & 0x01) > 0
-    }
-}
-
-/// If TaskData is in use by the executor (started but not finished, ready for poll etc.)
-/// when it is dropped the drop code will panic.
-impl Drop for TaskData {
-    fn drop(&mut self) {
-        if !self.waker.release_reference() {
-            panic!("Releasing an already released reference!");
-        }
-        if (self.waker.ready_flag.load(Ordering::Acquire) & 0b0000_0010) != 0 {
-            panic!("Task dropped while it is still running");
-        }
-    }
-}
-
 /// Trait for all tasks used by the executor.
 pub trait Task {
     /// Function to mutably access TaskData that must be stored by any task implementation.
-    fn mut_task_data(&mut self) -> &mut TaskData;
+    fn mut_task_data(&mut self) -> &mut crate::task::TaskData;
     /// Poll the task. This will normally delegate to some stored futures poll function.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> core::task::Poll<()>;
 }

@@ -1,4 +1,5 @@
-use crate::executor::{Task, TaskWaker};
+use crate::executor::{Task};
+use crate::task::TaskWaker;
 
 use core::mem::MaybeUninit;
 
