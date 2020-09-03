@@ -1,4 +1,4 @@
-use crate::executor::Task;
+use crate::executor::{Task, TaskWaker};
 
 use core::mem::MaybeUninit;
 
@@ -23,11 +23,12 @@ impl TaskList {
     pub fn end_item() -> *mut dyn Task {
         static mut END_TASK: MaybeUninit<crate::task::Task<EmptyFuture>> = MaybeUninit::uninit();
         static mut END_INIT: bool = false;
+        static WAKER: TaskWaker = TaskWaker::new();
 
         unsafe {
             if !END_INIT {
                 END_INIT = true;
-                END_TASK = MaybeUninit::new(crate::task::Task::new(EmptyFuture {}));
+                END_TASK = MaybeUninit::new(crate::task::Task::new(EmptyFuture {}, &WAKER));
             }
             END_TASK.as_mut_ptr()
         }

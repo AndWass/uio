@@ -10,7 +10,11 @@ use core::task::{Context, Poll};
 #[macro_export]
 macro_rules! task_decl {
     ($name:ident, $val:expr) => {
-        let $name = uio::task::Task::new($val);
+        let $name = uio::task::Task::new($val,
+            {
+                static WAKER: uio::executor::TaskWaker = uio::executor::TaskWaker::new();
+                &WAKER
+            });
         $crate::pin_utils::pin_mut!($name);
     };
 }
@@ -34,10 +38,10 @@ impl<T: Future> Unpin for Task<T> {}
 
 impl<T: Future> Task<T> {
     /// Create a new task wrapping the specified `future`.
-    pub fn new(future: T) -> Self {
+    pub fn new(future: T, waker: &'static crate::executor::TaskWaker) -> Self {
         Self {
             future,
-            task_data: crate::executor::TaskData::new(),
+            task_data: crate::executor::TaskData::new(waker),
             value: crate::future::Value::new(),
         }
     }
