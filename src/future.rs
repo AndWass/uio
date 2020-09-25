@@ -61,6 +61,15 @@ impl<T> Value<T> {
     }
 }
 
+impl<T> Drop for Value<T> {
+    fn drop(&mut self) {
+        self.take_waker();
+        if self.has_value() {
+            unsafe { self.take_value() }
+        }
+    }
+}
+
 impl<T: core::marker::Unpin> core::marker::Unpin for Value<T> {}
 
 impl<T: core::marker::Unpin> Future for Value<T> {
