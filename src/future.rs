@@ -65,7 +65,7 @@ impl<T> Drop for Value<T> {
     fn drop(&mut self) {
         self.take_waker();
         if self.has_value() {
-            unsafe { self.take_value() }
+            unsafe { self.take_value() };
         }
     }
 }
