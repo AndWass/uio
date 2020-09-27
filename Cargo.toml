@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 pin-utils = "0.1.0"
+embedded-async = { git = "https://github.com/andwass/embedded-async", features = ["intrusive_list"] }
 
 [dev-dependencies]
 lazy_static = "1.4.0"

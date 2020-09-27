@@ -74,20 +74,12 @@
 
 pub use pin_utils;
 
-/// I/O traits and helpers.
-pub mod digital;
 /// Executor types, traits and functions.
 pub mod executor;
 /// Asynchronous values.
 pub mod future;
 /// Interrupt traits and helpers.
 pub mod interrupt;
-/// Serial I/O traits and helpers.
-pub mod serial;
-pub mod sync;
-pub mod timer;
-pub mod select;
 /// Types for working with tasks.
 pub mod task;
 
-mod task_list;

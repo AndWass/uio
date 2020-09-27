@@ -76,7 +76,7 @@ async fn task_sleep(time: u32) {
     Delay { millis: Some(time) }.await;
 }
 
-async fn consumer(id: u32, receiver: uio::sync::Receiver<Job>) {
+async fn consumer(id: u32, receiver: embedded_async::channel::Receiver<Job>) {
     let mut job_count = 0i32;
     'main_loop: loop {
         match receiver.recv().await {
@@ -98,7 +98,7 @@ async fn consumer(id: u32, receiver: uio::sync::Receiver<Job>) {
     println!("{} consumed {} jobs", id, job_count);
 }
 
-async fn producer(id: u32, sender: uio::sync::Sender<Job>) {
+async fn producer(id: u32, sender: embedded_async::channel::Sender<Job>) {
     for _ in 0..5 {
         let value = Producer { value: None }.await;
         println!("PRODUCER {} producing {}", id, value);
@@ -121,11 +121,11 @@ async fn producer(id: u32, sender: uio::sync::Sender<Job>) {
 }
 
 fn main() {
-    use uio::{channel, task_start};
-    // Create a channel
-    channel!(job_channel, Job::new(), 10);
+    use uio::task_start;
+    let job_channel = embedded_async::channel::Channel::<Job, embedded_async::channel::consts::U10>::new();
+    pin_utils::pin_mut!(job_channel);
     // Get a sender and receiver to the channel
-    let (s1, recv1) = job_channel.split();
+    let (s1, recv1) = job_channel.split().unwrap();
 
     task_start!(producer1, producer(1, s1.clone()));
     task_start!(producer2, producer(2, s1.clone()));

@@ -5,20 +5,22 @@ use core::mem::MaybeUninit;
 use core::ops::{BitAnd, BitOr};
 use core::pin::Pin;
 
-use crate::task_list::TaskList;
+use embedded_async::intrusive::double_list;
 
 static mut CURRENT_TASK_FLAG: AtomicPtr<AtomicU8> = AtomicPtr::new(core::ptr::null_mut());
-static mut TASK_LIST: MaybeUninit<TaskList> = MaybeUninit::uninit();
+static mut TASK_LIST: double_list::List<Option<*mut dyn Task>> = double_list::List::new();
 
-fn task_list() -> &'static mut TaskList {
-    static mut TASK_LIST_INIT: bool = false;
+fn task_list() -> &'static mut double_list::List<Option<*mut dyn Task>> {
+    //static mut TASK_LIST_INIT: bool = false;
     unsafe {
-        if !TASK_LIST_INIT {
-            TASK_LIST = MaybeUninit::new(TaskList::new());
+        /*if !TASK_LIST_INIT {
+            TASK_LIST = MaybeUninit::new(double_list::List::new());
             TASK_LIST_INIT = true;
         }
 
         &mut *TASK_LIST.as_mut_ptr()
+         */
+        &mut  TASK_LIST
     }
 }
 
@@ -33,7 +35,7 @@ fn task_list() -> &'static mut TaskList {
 /// executor.
 pub struct TaskData {
     ready_flag: AtomicU8,
-    pub(crate) next: *mut dyn Task,
+    node: double_list::Node<Option<*mut dyn Task>>
 }
 
 impl TaskData {
@@ -42,7 +44,7 @@ impl TaskData {
     pub fn new() -> Self {
         Self {
             ready_flag: AtomicU8::new(0),
-            next: TaskList::end_item(),
+            node: double_list::Node::new(None),
         }
     }
 
@@ -77,6 +79,10 @@ impl TaskData {
 
     fn set_ready_to_poll(&mut self) {
         Self::flag_set_ready_to_poll(&mut self.ready_flag);
+    }
+
+    unsafe fn task(&mut self) -> &mut dyn Task {
+        &mut *self.node.data.expect("")
     }
 }
 
@@ -159,13 +165,18 @@ pub fn run() {
     }
     'main_loop: loop {
         unsafe {
-            let mut available_tasks = task_list().take();
+            let mut available_tasks = double_list::List::new();
+            task_list().move_to_front_of(&mut available_tasks);
             let task_list = task_list();
-            while !available_tasks.is_empty() {
-                let next_task = available_tasks.pop_front();
-                match maybe_poll_task(&mut *next_task) {
-                    TaskState::NotReady | TaskState::Pending => task_list.push_front(next_task),
-                    TaskState::Finished => (&mut *next_task).mut_task_data().set_finished(),
+            while let Some(next_task) = available_tasks.pop_front() {
+                let task = &mut *next_task.owner_mut().expect("").expect("");
+                match maybe_poll_task(task) {
+                    TaskState::NotReady | TaskState::Pending => {
+                        let next_task_ptr = next_task as *mut double_list::Link<Option<*mut dyn Task>>;
+                        let owner = next_task.owner_mut().expect("");
+                        task_list.push_link_back(owner, next_task_ptr);
+                    },
+                    TaskState::Finished => task.mut_task_data().set_finished(),
                 }
             }
         }
@@ -189,7 +200,8 @@ pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> TaskResult<T::
     let task = unsafe { task.get_unchecked_mut() };
     task.mut_task_data().set_started();
     task.mut_task_data().set_ready_to_poll();
-    task_list().push_front(&mut *task);
+    task.mut_task_data().node = double_list::Node::new(Some(task as *mut _));
+    task_list().push_node_back(&mut task.mut_task_data().node);
 
     TaskResult {
         value: task.value_ptr(),
