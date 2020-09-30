@@ -33,7 +33,7 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 [[package]]
 name = "embedded-async"
 version = "0.1.0"
-source = "git+https://github.com/andwass/embedded-async#f17bf173e6ac4cad99cee56e8581755e44d01d30"
+source = "git+https://github.com/andwass/embedded-async#0750b82ec4227fb0fb719724eecddd6bdea9b304"
 dependencies = [
  "embedded-time",
  "heapless",

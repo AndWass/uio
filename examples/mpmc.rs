@@ -35,19 +35,9 @@ impl Future for Producer {
     }
 }
 
-#[derive(Copy, Clone)]
 struct Job {
     producer: u32,
     value: u32,
-}
-
-impl Job {
-    pub const fn new() -> Self {
-        Self {
-            producer: 0,
-            value: 0,
-        }
-    }
 }
 
 struct Delay {

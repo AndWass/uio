@@ -1,105 +1,26 @@
-use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 use core::task::{Context, RawWaker, RawWakerVTable, Waker};
 
-use core::mem::MaybeUninit;
-use core::ops::{BitAnd, BitOr};
 use core::pin::Pin;
 
-use embedded_async::intrusive::double_list;
+use embedded_async::intrusive::intrusive_list;
+use crate::task::TaskWaker;
 
-static mut CURRENT_TASK_FLAG: AtomicPtr<AtomicU8> = AtomicPtr::new(core::ptr::null_mut());
-static mut TASK_LIST: double_list::List<Option<*mut dyn Task>> = double_list::List::new();
+static mut CURRENT_TASK_FLAG: AtomicPtr<crate::task::TaskWaker> = AtomicPtr::new(core::ptr::null_mut());
+static mut TASK_LIST: intrusive_list::List<*mut dyn Task> = intrusive_list::List::new();
 
-fn task_list() -> &'static mut double_list::List<Option<*mut dyn Task>> {
-    //static mut TASK_LIST_INIT: bool = false;
+fn task_list() -> &'static mut intrusive_list::List<*mut dyn Task> {
     unsafe {
-        /*if !TASK_LIST_INIT {
-            TASK_LIST = MaybeUninit::new(double_list::List::new());
-            TASK_LIST_INIT = true;
-        }
-
-        &mut *TASK_LIST.as_mut_ptr()
-         */
         &mut  TASK_LIST
-    }
-}
-
-/// Any tasks type used by the executor must store an instance of this structure. It must not be changed
-/// by the task once the task has been started.
-///
-/// It is used internally by the executor and cannot be used in any other way.
-///
-/// # Panics
-///
-/// Panics if any instance of TaskData is dropped while the owning task is still active within the
-/// executor.
-pub struct TaskData {
-    ready_flag: AtomicU8,
-    node: double_list::Node<Option<*mut dyn Task>>
-}
-
-impl TaskData {
-    /// Constructs a new task-data instance. This is the only function available.
-    /// Only used when constructing task-objects.
-    pub fn new() -> Self {
-        Self {
-            ready_flag: AtomicU8::new(0),
-            node: double_list::Node::new(None),
-        }
-    }
-
-    fn update_flag(flag: &AtomicU8, update_fn: impl Fn(u8) -> u8) {
-        let mut flag_value = flag.load(Ordering::Acquire);
-        let mut new_value = update_fn(flag_value);
-        while flag.compare_and_swap(flag_value, new_value, Ordering::SeqCst) != flag_value {
-            flag_value = flag.load(Ordering::Acquire);
-            new_value = update_fn(flag_value);
-        }
-    }
-
-    fn is_ready_to_poll(&self) -> bool {
-        (self.ready_flag.load(Ordering::Acquire) & 0x01) > 0
-    }
-
-    fn set_started(&mut self) {
-        Self::update_flag(&mut self.ready_flag, |value| value.bitor(0b0000_0010));
-    }
-
-    fn set_finished(&mut self) {
-        Self::update_flag(&mut self.ready_flag, |value| value.bitand(0b1111_1101));
-    }
-
-    fn flag_set_ready_to_poll(flag: &mut AtomicU8) {
-        Self::update_flag(flag, |value| value.bitor(0x01));
-    }
-
-    fn clear_ready_to_poll(&mut self) {
-        Self::update_flag(&mut self.ready_flag, |value| value.bitand(0b1111_1110));
-    }
-
-    fn set_ready_to_poll(&mut self) {
-        Self::flag_set_ready_to_poll(&mut self.ready_flag);
-    }
-
-    unsafe fn task(&mut self) -> &mut dyn Task {
-        &mut *self.node.data.expect("")
-    }
-}
-
-/// If TaskData is in use by the executor (started but not finished, ready for poll etc.)
-/// when it is dropped the drop code will panic.
-impl Drop for TaskData {
-    fn drop(&mut self) {
-        if (self.ready_flag.load(Ordering::Acquire) & 0b0000_0010) != 0 {
-            panic!("Task dropped while it is still running");
-        }
     }
 }
 
 /// Trait for all tasks used by the executor.
 pub trait Task {
-    /// Function to mutably access TaskData that must be stored by any task implementation.
-    fn mut_task_data(&mut self) -> &mut TaskData;
+    /// Access to the waker
+    fn waker(&self) -> &'static TaskWaker;
+    /// Access to the intrusive list node
+    fn node(&mut self) -> &mut intrusive_list::Node<*mut dyn Task>;
     /// Poll the task. This will normally delegate to some stored futures poll function.
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> core::task::Poll<()>;
 }
@@ -131,10 +52,10 @@ enum TaskState {
 }
 
 fn maybe_poll_task(task: &mut (dyn Task + 'static)) -> TaskState {
-    let task_data = task.mut_task_data();
-    if task_data.is_ready_to_poll() {
-        task_data.clear_ready_to_poll();
-        set_current_task_flag(&mut task_data.ready_flag);
+    let waker = task.waker();
+    if waker.is_ready_to_poll() {
+        waker.clear_ready_to_poll();
+        set_current_task_flag(waker);
 
         let task = unsafe { core::pin::Pin::new_unchecked(task) };
         let waker = make_waker_for_current();
@@ -165,18 +86,18 @@ pub fn run() {
     }
     'main_loop: loop {
         unsafe {
-            let mut available_tasks = double_list::List::new();
+            let mut available_tasks = intrusive_list::List::new();
             task_list().move_to_front_of(&mut available_tasks);
             let task_list = task_list();
             while let Some(next_task) = available_tasks.pop_front() {
-                let task = &mut *next_task.owner_mut().expect("").expect("");
+                let task = &mut **next_task.owner_mut().expect("");
                 match maybe_poll_task(task) {
                     TaskState::NotReady | TaskState::Pending => {
-                        let next_task_ptr = next_task as *mut double_list::Link<Option<*mut dyn Task>>;
+                        let next_task_ptr = next_task as *mut intrusive_list::Link<*mut dyn Task>;
                         let owner = next_task.owner_mut().expect("");
                         task_list.push_link_back(owner, next_task_ptr);
                     },
-                    TaskState::Finished => task.mut_task_data().set_finished(),
+                    TaskState::Finished => task.waker().set_finished(),
                 }
             }
         }
@@ -198,32 +119,32 @@ pub fn run() {
 /// * `task` - The task to start.
 pub fn start<T: Task + TypedTask + 'static>(task: Pin<&mut T>) -> TaskResult<T::Output> {
     let task = unsafe { task.get_unchecked_mut() };
-    task.mut_task_data().set_started();
-    task.mut_task_data().set_ready_to_poll();
-    task.mut_task_data().node = double_list::Node::new(Some(task as *mut _));
-    task_list().push_node_back(&mut task.mut_task_data().node);
+    task.waker().set_started();
+    task.waker().set_ready_to_poll();
+    *task.node() = intrusive_list::Node::new(task as *mut _);
+    task_list().push_node_back(task.node());
 
     TaskResult {
         value: task.value_ptr(),
     }
 }
 
-fn set_current_task_flag(flag: &mut AtomicU8) {
+fn set_current_task_flag(waker: &'static TaskWaker) {
     unsafe {
-        CURRENT_TASK_FLAG.store(flag as *mut AtomicU8, Ordering::Release);
+        CURRENT_TASK_FLAG.store(waker as *const TaskWaker as *mut TaskWaker, Ordering::Release);
     }
 }
 
-fn current_task_flag<'a>() -> &'a mut AtomicU8 {
-    unsafe { &mut *CURRENT_TASK_FLAG.load(Ordering::Acquire) }
+fn current_task_flag() -> &'static TaskWaker {
+    unsafe { & *CURRENT_TASK_FLAG.load(Ordering::Acquire) }
 }
 
 fn make_waker_for_current() -> Waker {
     make_waker(current_task_flag())
 }
 
-fn make_waker(flag: &mut AtomicU8) -> Waker {
-    let data = flag as *const AtomicU8 as *const ();
+fn make_waker(flag: &'static TaskWaker) -> Waker {
+    let data = flag as *const TaskWaker as *const ();
     unsafe { Waker::from_raw(make_raw_waker(data)) }
 }
 
@@ -232,8 +153,8 @@ fn raw_wake(data: *const ()) {
         return;
     }
 
-    let data = data as *mut () as *mut AtomicU8;
-    TaskData::flag_set_ready_to_poll(unsafe { &mut *data });
+    let data = unsafe { &*(data as *const TaskWaker) };
+    data.set_ready_to_poll();
 }
 
 fn make_raw_waker(data: *const ()) -> RawWaker {
